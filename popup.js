@@ -71,7 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const response = await fetch(`https://api.crossref.org/works/${doi}/transform/application/x-bibtex`, {
         headers: {
           'Accept': 'application/x-bibtex',
-          'User-Agent': 'DOItoBibTeX_Extension/1.0 (mailto:neri@users.noreply.github.com)'
+          'User-Agent': 'DOItoBibTeX_Extension/1.0 (mailto:your-email@example.com)'
         }
       });
 
