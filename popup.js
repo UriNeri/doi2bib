@@ -5,6 +5,31 @@ document.addEventListener('DOMContentLoaded', () => {
   const copyButton = document.getElementById('copyButton');
   const status = document.getElementById('status');
 
+  const normalizeDOI = (input) => input
+    .trim()
+    .replace(/^(https?:\/\/)?(dx\.)?doi\.org\//i, '');
+
+  const parseIdentifier = (input) => {
+    const normalizedInput = input.trim();
+    const normalizedDOI = normalizeDOI(normalizedInput);
+
+    if (validateDOI(normalizedDOI)) {
+      return { type: 'doi', value: normalizedDOI };
+    }
+
+    const pmcidMatch = normalizedInput.match(/^(?:pmcid\s*:?\s*)?(PMC\d+)$/i);
+    if (pmcidMatch) {
+      return { type: 'pmcid', value: pmcidMatch[1].toUpperCase() };
+    }
+
+    const pmidMatch = normalizedInput.match(/^(?:pmid\s*:?\s*)?(\d+)$/i);
+    if (pmidMatch) {
+      return { type: 'pmid', value: pmidMatch[1] };
+    }
+
+    return null;
+  };
+
   const validateDOI = (doi) => {
     const doiRegex = /^10\.\d{4,9}\/[-._;()\/:a-zA-Z0-9]+$/;
     return doiRegex.test(doi);
@@ -51,16 +76,49 @@ document.addEventListener('DOMContentLoaded', () => {
            '\n}';
   };
 
-  convertButton.addEventListener('click', async () => {
-    const doi = doiInput.value.trim();
-    
-    if (!doi) {
+  const resolveDOI = async (identifier) => {
+    if (identifier.type === 'doi') {
+      return identifier.value;
+    }
+
+    const query = identifier.type === 'pmcid'
+      ? `PMCID:${identifier.value}`
+      : `EXT_ID:${identifier.value} AND SRC:MED`;
+    const url = new URL('https://www.ebi.ac.uk/europepmc/webservices/rest/search');
+    url.search = new URLSearchParams({
+      query,
+      format: 'json',
+      pageSize: '1'
+    }).toString();
+
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(`Failed to resolve ${identifier.type.toUpperCase()}`);
+    }
+
+    const data = await response.json();
+    const result = data.resultList?.result?.[0];
+
+    if (!result?.doi) {
+      throw new Error(`Could not resolve ${identifier.type.toUpperCase()} to a DOI`);
+    }
+
+    return result.doi;
+  };
+
+  const convertInput = async () => {
+    const input = doiInput.value.trim();
+
+    if (!input) {
       showStatus('Please enter a DOI', true);
       return;
     }
 
-    if (!validateDOI(doi)) {
-      showStatus('Invalid DOI format', true);
+    const identifier = parseIdentifier(input);
+
+    if (!identifier) {
+      showStatus('Invalid DOI, PMID, or PMCID format', true);
       return;
     }
 
@@ -68,7 +126,8 @@ document.addEventListener('DOMContentLoaded', () => {
     showStatus('Converting...');
 
     try {
-      const response = await fetch(`https://api.crossref.org/works/${doi}/transform/application/x-bibtex`, {
+      const doi = await resolveDOI(identifier);
+      const response = await fetch(`https://api.crossref.org/works/${encodeURIComponent(doi)}/transform/application/x-bibtex`, {
         headers: {
           'Accept': 'application/x-bibtex',
           'User-Agent': 'DOItoBibTeX_Extension/1.0 (mailto:your-email@example.com)'
@@ -88,7 +147,9 @@ document.addEventListener('DOMContentLoaded', () => {
     } finally {
       convertButton.disabled = false;
     }
-  });
+  };
+
+  convertButton.addEventListener('click', convertInput);
 
   copyButton.addEventListener('click', async () => {
     if (!bibtexOutput.value) {
@@ -108,4 +169,11 @@ document.addEventListener('DOMContentLoaded', () => {
   doiInput.addEventListener('input', () => {
     showStatus('');
   });
-}); 
+
+  doiInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !convertButton.disabled) {
+      event.preventDefault();
+      convertInput();
+    }
+  });
+});

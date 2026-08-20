@@ -8,7 +8,8 @@
     "scripting"
   ],
   "host_permissions": [
-    "https://api.crossref.org/*"
+    "https://api.crossref.org/*",
+    "https://www.ebi.ac.uk/*"
   ],
   "action": {
     "default_popup": "popup.html",
